@@ -13,6 +13,9 @@ class LoginController extends ChangeNotifier {
   String? get error => _error;
   UserModel? get user => _user;
 
+  // ✅ GETTER PARA O ID DO USUÁRIO (VISITOR ID)
+  String? get visitorId => _user?.id;
+
   Future<bool> login(String email, String password) async {
     _setLoading(true);
     _clearError();
@@ -21,6 +24,7 @@ class LoginController extends ChangeNotifier {
       print('🔵 Tentando login com: $email');
       final user = await _authService.login(email, password);
       print('✅ Login bem-sucedido: ${user.name}');
+      print('🔵 User ID: ${user.id}');
       _user = user;
       _setLoading(false);
       return true;

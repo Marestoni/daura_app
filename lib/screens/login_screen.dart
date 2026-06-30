@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart'; // ✅ ADICIONE
 import '../controllers/login_controller.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/custom_button.dart';
@@ -17,7 +18,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _controller = LoginController();
 
   bool _obscurePassword = true;
 
@@ -25,12 +25,14 @@ class _LoginScreenState extends State<LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
-    _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    // ✅ PEGAR O CONTROLLER DO PROVIDER
+    final controller = context.watch<LoginController>();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -44,7 +46,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 children: [
                   _buildHeader(),
                   const SizedBox(height: 40),
-                  _buildForm(),
+                  _buildForm(controller),
                 ],
               ),
             ),
@@ -88,7 +90,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildForm() {
+  Widget _buildForm(LoginController controller) {
     return Column(
       children: [
         CustomTextField(
@@ -121,12 +123,12 @@ class _LoginScreenState extends State<LoginScreen> {
           ),
         ),
         const SizedBox(height: 24),
-        if (_controller.error != null) _buildError(),
+        if (controller.error != null) _buildError(controller.error!),
         const SizedBox(height: 16),
         CustomButton(
           text: 'Entrar',
-          onPressed: _login,
-          isLoading: _controller.isLoading,
+          onPressed: controller.isLoading ? null : () => _login(controller),
+          isLoading: controller.isLoading,
         ),
         const SizedBox(height: 20),
         Text(
@@ -137,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildError() {
+  Widget _buildError(String error) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -149,20 +151,17 @@ class _LoginScreenState extends State<LoginScreen> {
           const Icon(Icons.error_outline, color: AppColors.error),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              _controller.error!,
-              style: const TextStyle(color: AppColors.error),
-            ),
+            child: Text(error, style: const TextStyle(color: AppColors.error)),
           ),
         ],
       ),
     );
   }
 
-  void _login() async {
+  void _login(LoginController controller) async {
     if (!_formKey.currentState!.validate()) return;
 
-    final success = await _controller.login(
+    final success = await controller.login(
       _emailController.text.trim(),
       _passwordController.text,
     );
@@ -170,26 +169,23 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
 
     if (success) {
-      // ✅ VAI DIRETO PARA DASHBOARD SEM DIALOG
-      _goToDashboard();
+      _goToDashboard(controller);
     }
   }
 
-  // ✅ MÉTODO QUE REDIRECIONA DIRETO
-  void _goToDashboard() {
-    print('🟢 _goToDashboard() chamado!');
-    print('🟢 _controller.user: ${_controller.user}');
-    print('🟢 _controller.user?.name: ${_controller.user?.name}');
+  void _goToDashboard(LoginController controller) {
+    final userName = controller.user?.name ?? 'Usuário';
 
-    final userName = _controller.user?.name ?? 'Usuário';
-    print('🟢 Redirecionando com nome: $userName');
+    // ✅ VERIFICAR SE O USER NÃO É NULL
+    print(
+      '🔵 Navegando para Dashboard com usuário: ${controller.user?.toJson()}',
+    );
 
-    Navigator.pushAndRemoveUntil(
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => DashboardScreen(userName: userName),
       ),
-      (route) => false,
     );
   }
 }
