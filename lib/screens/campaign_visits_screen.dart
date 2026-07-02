@@ -4,6 +4,7 @@ import '../models/visit_model.dart';
 import '../services/visit_service.dart';
 import '../services/storage_service.dart';
 import '../utils/app_colors.dart';
+import '../widgets/visit_card.dart'; // ✅ ADICIONAR O IMPORT
 
 class CampaignVisitsScreen extends StatefulWidget {
   final CampaignModel campaign;
@@ -54,6 +55,10 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
     });
 
     try {
+      print('🔵 Carregando visitas...');
+      print('🔵 campaignId: ${widget.campaign.id}');
+      print('🔵 visitorId: ${widget.visitorId}');
+
       final response = await _visitService.getVisits(
         campaignId: widget.campaign.id,
         visitorId: widget.visitorId,
@@ -63,16 +68,26 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
         limit: _limit,
       );
 
+      print('✅ Visitas carregadas: ${response.data.length}');
+      print('✅ Total: ${response.total}');
+
       setState(() {
         if (resetPage) {
           _visits = response.data;
         } else {
           _visits.addAll(response.data);
         }
-        _totalPages = (response.total / _limit).ceil();
+
+        if (response.total > 0 && response.limit > 0) {
+          _totalPages = (response.total / response.limit).ceil();
+        } else {
+          _totalPages = 1;
+        }
+
         _isLoading = false;
       });
     } catch (e) {
+      print('❌ Erro ao carregar visitas: $e');
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
         _isLoading = false;
@@ -202,6 +217,7 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
           if (index == _visits.length) {
             return _buildLoadMoreButton();
           }
+          // ✅ Usar o VisitCard importado
           return VisitCard(visit: _visits[index]);
         },
       ),
@@ -336,150 +352,5 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
         ],
       ),
     );
-  }
-}
-
-// ✅ Widget do Card de Visita
-class VisitCard extends StatelessWidget {
-  final VisitModel visit;
-
-  const VisitCard({super.key, required this.visit});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${visit.address.street}, ${visit.address.number}',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ),
-              _buildStatusChip(visit.status),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${visit.address.neighborhood} - ${visit.address.city}/${visit.address.state}',
-            style: TextStyle(fontSize: 14, color: Colors.grey[600]),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.calendar_today, size: 14, color: Colors.grey[500]),
-              const SizedBox(width: 4),
-              Text(
-                _formatDate(visit.scheduledDate),
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-              const SizedBox(width: 16),
-              Icon(Icons.person, size: 14, color: Colors.grey[500]),
-              const SizedBox(width: 4),
-              Text(
-                visit.visitor.name,
-                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              ),
-            ],
-          ),
-          if (visit.notes != null && visit.notes!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.background,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Text(
-                visit.notes!,
-                style: TextStyle(fontSize: 13, color: Colors.grey[700]),
-              ),
-            ),
-          ],
-          if (visit.completedDate != null) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.check_circle, size: 14, color: AppColors.success),
-                const SizedBox(width: 4),
-                Text(
-                  'Concluída em: ${_formatDate(visit.completedDate!)}',
-                  style: TextStyle(fontSize: 12, color: AppColors.success),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusChip(String status) {
-    Color color;
-    String label;
-
-    switch (status.toLowerCase()) {
-      case 'completed':
-        color = AppColors.success;
-        label = 'Concluída';
-        break;
-      case 'pending':
-        color = AppColors.warning;
-        label = 'Pendente';
-        break;
-      case 'canceled':
-        color = AppColors.error;
-        label = 'Cancelada';
-        break;
-      default:
-        color = Colors.grey;
-        label = status;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  String _formatDate(String date) {
-    try {
-      final parsed = DateTime.parse(date);
-      return '${parsed.day.toString().padLeft(2, '0')}/${parsed.month.toString().padLeft(2, '0')}/${parsed.year} ${parsed.hour.toString().padLeft(2, '0')}:${parsed.minute.toString().padLeft(2, '0')}';
-    } catch (e) {
-      return date;
-    }
   }
 }
