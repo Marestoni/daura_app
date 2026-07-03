@@ -60,7 +60,6 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     try {
       final visit = await _visitService.getVisitById(widget.visitId);
 
-      print("scheduledDate = ${visit.scheduledDate}");
       setState(() {
         _visit = visit;
         _isLoading = false;
@@ -278,7 +277,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     if (_selectedPresence == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor, informe se alguém está no imóvel'),
+          content: Text('Por favor, informe se alguém está Presente no imóvel'),
           backgroundColor: AppColors.warning,
         ),
       );
@@ -384,7 +383,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     if (_selectedPresence == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Por favor, informe se alguém está no imóvel'),
+          content: Text('Por favor, informe se alguém está Presente no imóvel'),
           backgroundColor: AppColors.warning,
         ),
       );
