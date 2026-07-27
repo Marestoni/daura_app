@@ -71,6 +71,30 @@ class Address {
       updatedAt: json['updatedAt']?.toString() ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'street': street,
+      'number': number,
+      'complement': complement,
+      'neighborhood': neighborhood,
+      'city': city,
+      'state': state,
+      'zipCode': zipCode,
+      'residentName': residentName,
+      'phone': phone,
+      'observations': observations,
+      'latitude': latitude,
+      'longitude': longitude,
+      'sector': sector,
+      'groupId': groupId,
+      'fullAddress': fullAddress,
+      'hasCoordinates': hasCoordinates,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+    };
+  }
 }
 
 // ============================================
@@ -127,6 +151,25 @@ class CampaignInfo {
       updatedAt: json['updatedAt']?.toString() ?? '',
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'objective': objective,
+      'startDate': startDate,
+      'endDate': endDate,
+      'status': status,
+      'progress': progress,
+      'totalVisits': totalVisits,
+      'completedVisits': completedVisits,
+      'pendingVisits': pendingVisits,
+      'createdBy': createdBy,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+    };
+  }
 }
 
 // ============================================
@@ -164,6 +207,19 @@ class VisitorInfo {
       createdAt: json['createdAt']?.toString() ?? '',
       updatedAt: json['updatedAt']?.toString() ?? '',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'role': role,
+      'isActive': isActive,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+    };
   }
 }
 
@@ -215,6 +271,22 @@ class Photo {
           : null,
       createdAt: json['createdAt']?.toString() ?? '',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'visitId': visitId,
+      'filename': filename,
+      'path': path,
+      'mimeType': mimeType,
+      'size': size,
+      'metadata': metadata,
+      'takenAt': takenAt,
+      'latitude': latitude,
+      'longitude': longitude,
+      'createdAt': createdAt,
+    };
   }
 }
 
@@ -366,6 +438,39 @@ class VisitModel {
       attemptLabel: json['attemptLabel']?.toString(),
       photos: photos,
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'visitorId': visitorId,
+      'campaignId': campaignId,
+      'addressId': addressId,
+      'status': status,
+      'notes': notes,
+      'scheduledDate': scheduledDate,
+      'completedDate': completedDate,
+      'address': address.toJson(),
+      'campaign': campaign.toJson(),
+      'visitor': visitor.toJson(),
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+      'attempt': attempt,
+      'startedAt': startedAt,
+      'completedAt': completedAt,
+      'observation': observation,
+      'formData': formData,
+      'answers': answers,
+      'attendedBy': attendedBy,
+      'situation': situation,
+      'visitOrder': visitOrder,
+      'distanceFromPrevious': distanceFromPrevious,
+      'isFinished': isFinished,
+      'statusLabel': statusLabel,
+      'statusColor': statusColor,
+      'attemptLabel': attemptLabel,
+      'photos': photos.map((p) => p.toJson()).toList(),
+    };
   }
 }
 

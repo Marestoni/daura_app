@@ -56,6 +56,27 @@ class CampaignModel {
       updatedAt: json['updatedAt'] ?? '',
     );
   }
+
+  // ✅ ADICIONAR MÉTODO TOJSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'description': description,
+      'objective': objective,
+      'startDate': startDate,
+      'endDate': endDate,
+      'status': status,
+      'visitors': visitors.map((v) => v.toJson()).toList(),
+      'progress': progress,
+      'totalVisits': totalVisits,
+      'completedVisits': completedVisits,
+      'pendingVisits': pendingVisits,
+      'createdBy': createdBy.toJson(),
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+    };
+  }
 }
 
 class Visitor {
@@ -91,6 +112,20 @@ class Visitor {
       updatedAt: json['updatedAt'] ?? '',
     );
   }
+
+  // ✅ ADICIONAR MÉTODO TOJSON
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'role': role,
+      'isActive': isActive,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+    };
+  }
 }
 
 class CreatedBy {
@@ -125,6 +160,19 @@ class CreatedBy {
       createdAt: json['createdAt'] ?? '',
       updatedAt: json['updatedAt'] ?? '',
     );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'email': email,
+      'phone': phone,
+      'role': role,
+      'isActive': isActive,
+      'createdAt': createdAt,
+      'updatedAt': updatedAt,
+    };
   }
 }
 

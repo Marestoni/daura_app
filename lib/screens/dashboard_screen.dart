@@ -1,10 +1,14 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../utils/app_colors.dart';
 import '../controllers/login_controller.dart';
 import '../services/campaign_service.dart';
+import '../services/sync_service.dart'; // ✅ USADO AQUI
+import '../database/database_helper.dart';
 import '../models/campaign_model.dart';
 import '../widgets/campaign_card.dart';
+import '../widgets/connection_status.dart';
 import 'login_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -20,19 +24,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   final CampaignService _campaignService = CampaignService();
   List<CampaignModel> _campaigns = [];
   bool _isLoading = true;
+  bool _isOfflineMode = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
     _loadCampaigns();
-
-    // ✅ VERIFICAR O ESTADO DO CONTROLLER AO INICIAR
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final controller = context.read<LoginController>();
-      print('🔵 Dashboard - initState - User: ${controller.user?.toJson()}');
-      print('🔵 Dashboard - initState - VisitorId: ${controller.visitorId}');
-    });
   }
 
   @override
@@ -45,17 +43,104 @@ class _DashboardScreenState extends State<DashboardScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
+      _isOfflineMode = false;
     });
 
     try {
-      final response = await _campaignService.getCampaigns();
-      setState(() {
-        _campaigns = response.data;
-        _isLoading = false;
-      });
+      // ✅ VERIFICAR CONECTIVIDADE
+      final syncService = context.read<SyncService>();
+
+      if (syncService.isConnected) {
+        // ✅ ONLINE: Buscar da API
+        print('🌐 Carregando campanhas da API...');
+        final response = await _campaignService.getCampaigns();
+        setState(() {
+          _campaigns = response.data;
+          _isLoading = false;
+        });
+      } else {
+        // ✅ OFFLINE: Buscar do cache local
+        print('📴 Carregando campanhas do cache local...');
+        await _loadFromLocalCache();
+      }
+    } catch (e) {
+      // Se falhar, tentar carregar do cache local
+      print('⚠️ Erro na API, tentando cache local...');
+      await _loadFromLocalCache();
+    }
+  }
+
+  Future<void> _loadFromLocalCache() async {
+    try {
+      final db = DatabaseHelper();
+      final localData = await db.query('campaigns');
+
+      if (localData.isNotEmpty) {
+        final List<CampaignModel> campaigns = localData.map((item) {
+          final data = jsonDecode(item['data']);
+          return CampaignModel.fromJson(data);
+        }).toList();
+
+        setState(() {
+          _campaigns = campaigns;
+          _isLoading = false;
+          _isOfflineMode = true;
+          _error = null;
+        });
+        print('✅ ${campaigns.length} campanhas carregadas do cache');
+      } else {
+        setState(() {
+          _isLoading = false;
+          _error = 'Sem conexão e nenhum dado disponível offline';
+        });
+      }
     } catch (e) {
       setState(() {
-        _error = e.toString().replaceFirst('Exception: ', '');
+        _isLoading = false;
+        _error =
+            'Erro ao carregar dados offline: ${e.toString().replaceFirst('Exception: ', '')}';
+      });
+    }
+  }
+
+  // ✅ MÉTODO PARA FORÇAR SINCRONIZAÇÃO
+  Future<void> _forceSync() async {
+    final syncService = context.read<SyncService>();
+    if (!syncService.isConnected) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sem conexão com a internet'),
+          backgroundColor: AppColors.warning,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await syncService.syncAll();
+      await _loadCampaigns();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sincronização concluída!'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Erro na sincronização: ${e.toString().replaceFirst('Exception: ', '')}',
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      setState(() {
         _isLoading = false;
       });
     }
@@ -63,29 +148,58 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ PEGAR O CONTROLLER E O VISITOR ID
-    final controller = context.watch<LoginController>();
-    final visitorId = controller.visitorId ?? '';
-
-    print('🔵 Dashboard - build - User: ${controller.user?.toJson()}');
-    print('🔵 Dashboard - build - VisitorId: "$visitorId"');
-    print('🔵 Dashboard - build - VisitorId é vazio? ${visitorId.isEmpty}');
+    final visitorId = context.read<LoginController>().visitorId ?? '';
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: Row(
+          children: [
+            const Text('Dashboard'),
+            if (_isOfflineMode) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Text(
+                  'OFFLINE',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          // ✅ STATUS DE CONEXÃO
+          const Padding(
+            padding: EdgeInsets.only(right: 8),
+            child: ConnectionStatus(isCompact: true),
+          ),
+          // ✅ BOTÃO DE SINCRONIZAÇÃO FORÇADA
+          IconButton(
+            icon: const Icon(Icons.sync),
+            onPressed: _forceSync,
+            tooltip: 'Sincronizar',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadCampaigns,
+            tooltip: 'Recarregar',
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () => _logout(context),
+            tooltip: 'Sair',
           ),
         ],
       ),
@@ -112,9 +226,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
             Icon(Icons.campaign_outlined, size: 64, color: Colors.grey[400]),
             const SizedBox(height: 16),
             Text(
-              'Nenhuma campanha encontrada',
+              _isOfflineMode
+                  ? 'Nenhuma campanha disponível offline'
+                  : 'Nenhuma campanha encontrada',
               style: TextStyle(fontSize: 16, color: Colors.grey[600]),
             ),
+            if (_isOfflineMode) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Conecte-se à internet e sincronize',
+                style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+              ),
+            ],
           ],
         ),
       );
@@ -159,20 +282,41 @@ class _DashboardScreenState extends State<DashboardScreen> {
               style: TextStyle(fontSize: 14, color: Colors.grey[600]),
             ),
             const SizedBox(height: 24),
-            ElevatedButton(
-              onPressed: _loadCampaigns,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton(
+                  onPressed: _loadCampaigns,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 12,
+                    ),
+                  ),
+                  child: const Text('Tentar novamente'),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 32,
-                  vertical: 12,
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _forceSync,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 32,
+                      vertical: 12,
+                    ),
+                  ),
+                  child: const Text('Sincronizar'),
                 ),
-              ),
-              child: const Text('Tentar novamente'),
+              ],
             ),
           ],
         ),

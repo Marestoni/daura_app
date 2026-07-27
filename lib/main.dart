@@ -3,12 +3,22 @@ import 'package:provider/provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'controllers/login_controller.dart';
+import 'services/sync_service.dart';
+import 'services/connectivity_service.dart';
 import 'utils/app_colors.dart';
 
 void main() {
+  // ✅ Inicializar o SyncService ANTES de tudo
+  final syncService = SyncService();
+  syncService.startMonitoring();
+
   runApp(
-    ChangeNotifierProvider(
-      create: (_) => LoginController(),
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => LoginController()),
+        ChangeNotifierProvider(create: (_) => ConnectivityService()),
+        Provider<SyncService>.value(value: syncService),
+      ],
       child: const MyApp(),
     ),
   );
@@ -27,10 +37,11 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       initialRoute: '/',
+      routes: {
+        '/': (context) => const LoginScreen(),
+        '/dashboard': (context) => const DashboardScreen(userName: 'Usuário'),
+      },
       onGenerateRoute: (settings) {
-        if (settings.name == '/') {
-          return MaterialPageRoute(builder: (context) => const LoginScreen());
-        }
         if (settings.name == '/dashboard') {
           final userName = settings.arguments as String? ?? 'Usuário';
           return MaterialPageRoute(

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import '../models/campaign_model.dart';
 import '../models/visit_model.dart';
-import '../services/visit_service.dart';
 import '../services/storage_service.dart';
 import '../utils/app_colors.dart';
-import '../widgets/visit_card.dart'; // ✅ ADICIONAR O IMPORT
+import '../widgets/visit_card.dart';
+import '../repositories/visit_repository.dart';
 
 class CampaignVisitsScreen extends StatefulWidget {
   final CampaignModel campaign;
@@ -21,7 +21,7 @@ class CampaignVisitsScreen extends StatefulWidget {
 }
 
 class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
-  final VisitService _visitService = VisitService();
+  final VisitRepository _visitRepository = VisitRepository();
   final StorageService _storage = StorageService();
 
   List<VisitModel> _visits = [];
@@ -43,7 +43,7 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
 
   @override
   void dispose() {
-    _visitService.dispose();
+    _visitRepository.dispose();
     super.dispose();
   }
 
@@ -55,11 +55,12 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
     });
 
     try {
-      print('🔵 Carregando visitas...');
+      print('🔵 Carregando visitas da campanha: ${widget.campaign.name}');
       print('🔵 campaignId: ${widget.campaign.id}');
       print('🔵 visitorId: ${widget.visitorId}');
 
-      final response = await _visitService.getVisits(
+      final visits = await _visitRepository.getVisitsByCampaign(
+        context: context, // ✅ PASSAR O CONTEXT
         campaignId: widget.campaign.id,
         visitorId: widget.visitorId,
         status: _selectedStatus,
@@ -68,22 +69,15 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
         limit: _limit,
       );
 
-      print('✅ Visitas carregadas: ${response.data.length}');
-      print('✅ Total: ${response.total}');
+      print('✅ ${visits.length} visitas carregadas');
 
       setState(() {
         if (resetPage) {
-          _visits = response.data;
+          _visits = visits;
         } else {
-          _visits.addAll(response.data);
+          _visits.addAll(visits);
         }
-
-        if (response.total > 0 && response.limit > 0) {
-          _totalPages = (response.total / response.limit).ceil();
-        } else {
-          _totalPages = 1;
-        }
-
+        _totalPages = _visits.isNotEmpty ? (_visits.length / _limit).ceil() : 1;
         _isLoading = false;
       });
     } catch (e) {
@@ -209,7 +203,7 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
     }
 
     return RefreshIndicator(
-      onRefresh: _loadVisits,
+      onRefresh: () => _loadVisits(),
       child: ListView.builder(
         padding: const EdgeInsets.all(16),
         itemCount: _visits.length + (_currentPage < _totalPages ? 1 : 0),
@@ -217,7 +211,6 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
           if (index == _visits.length) {
             return _buildLoadMoreButton();
           }
-          // ✅ Usar o VisitCard importado
           return VisitCard(visit: _visits[index]);
         },
       ),
@@ -268,7 +261,7 @@ class _CampaignVisitsScreenState extends State<CampaignVisitsScreen> {
             ),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: _loadVisits,
+              onPressed: () => _loadVisits(),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
