@@ -49,6 +49,9 @@ dependencies:
   
   # Para verificar conectividade
   connectivity_plus: ^6.0.5
+
+  # Captura de fotos (câmera e galeria)
+  image_picker: ^1.1.2
   
 
 dev_dependencies:

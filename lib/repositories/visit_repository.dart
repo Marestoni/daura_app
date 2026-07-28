@@ -25,8 +25,8 @@ class VisitRepository {
   // ✅ VERIFICAR CONECTIVIDADE DIRETAMENTE
   Future<bool> _checkConnectivity() async {
     try {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      final isConnected = connectivityResult != ConnectivityResult.none;
+      final results = await Connectivity().checkConnectivity();
+      final isConnected = results.any((r) => r != ConnectivityResult.none);
       print(
         '🌐 VisitRepository - Verificação direta: ${isConnected ? "Online" : "Offline"}',
       );
@@ -51,48 +51,28 @@ class VisitRepository {
     int limit = 20,
   }) async {
     try {
-      // ✅ VERIFICAR CONECTIVIDADE DIRETAMENTE
-      final isOnline = await _checkConnectivity();
-      print('🌐 VisitRepository - isOnline: $isOnline');
+      // ✅ OFFLINE-FIRST: sempre TENTA a API primeiro. Se a rede falhar, o
+      // catch abaixo cai para o cache local. Não dependemos do connectivity_plus
+      // (pouco confiável em emulador) para decidir se busca online.
+      print('🌐 Buscando visitas da API...');
+      print('🔍 campaignId: $campaignId');
+      print('🔍 visitorId: $visitorId');
 
-      if (isOnline) {
-        print('🌐 Buscando visitas da API...');
-        print('🔍 campaignId: $campaignId');
-        print('🔍 visitorId: $visitorId');
+      final response = await _visitService.getVisits(
+        campaignId: campaignId,
+        visitorId: visitorId,
+        status: status,
+        search: search,
+        page: page,
+        limit: limit,
+      );
 
-        final response = await _visitService.getVisits(
-          campaignId: campaignId,
-          visitorId: visitorId,
-          status: status,
-          search: search,
-          page: page,
-          limit: limit,
-        );
+      print('✅ ${response.data.length} visitas recebidas da API');
 
-        print('✅ ${response.data.length} visitas recebidas da API');
+      // ✅ Salvar no cache local
+      await _saveVisitsToCache(response.data);
 
-        // ✅ Salvar no cache local
-        await _saveVisitsToCache(response.data);
-
-        return response.data;
-      } else {
-        // ✅ Offline: buscar do cache local
-        print('📴 Offline - Buscando visitas do cache local...');
-        final cachedVisits = await _getVisitsFromCache(
-          campaignId: campaignId,
-          visitorId: visitorId,
-          status: status,
-          search: search,
-        );
-
-        if (cachedVisits.isNotEmpty) {
-          print('✅ ${cachedVisits.length} visitas encontradas no cache');
-          return cachedVisits;
-        } else {
-          print('⚠️ Nenhuma visita no cache');
-          return [];
-        }
-      }
+      return response.data;
     } catch (e) {
       print('⚠️ Erro ao buscar visitas: $e');
 
@@ -126,21 +106,15 @@ class VisitRepository {
     required String visitId,
   }) async {
     try {
-      final isOnline = await _checkConnectivity();
+      // ✅ OFFLINE-FIRST: tenta a API; em caso de falha de rede, cai no cache.
+      print('🌐 Buscando visita da API: $visitId');
+      final visit = await _visitService.getVisitById(visitId);
 
-      if (isOnline) {
-        print('🌐 Buscando visita da API: $visitId');
-        final visit = await _visitService.getVisitById(visitId);
-
-        if (visit != null) {
-          await _saveVisitToCache(visit);
-        }
-
-        return visit;
-      } else {
-        print('📴 Buscando visita do cache local: $visitId');
-        return await _getVisitFromCache(visitId);
+      if (visit != null) {
+        await _saveVisitToCache(visit);
       }
+
+      return visit;
     } catch (e) {
       print('⚠️ Erro ao buscar visita $visitId: $e');
       return await _getVisitFromCache(visitId);
@@ -167,8 +141,6 @@ class VisitRepository {
     Map<String, dynamic>? formData,
     Map<String, dynamic>? answers,
   }) async {
-    final isOnline = await _checkConnectivity();
-
     final visitData = {
       'id': visitId,
       'addressId': addressId,
@@ -189,44 +161,38 @@ class VisitRepository {
     // ✅ Salvar localmente primeiro (offline-first)
     await _saveVisitToCacheFromMap(visitData);
 
-    // ✅ Adicionar à fila de sincronização
-    await _db.addToSyncQueue(
-      operation: 'UPDATE',
-      entity: 'visit',
-      entityId: visitId,
-      data: visitData,
-    );
+    // ✅ Tenta enviar imediatamente. Só enfileira se o envio falhar — assim
+    // evita o envio duplicado (fila + envio imediato) que sobrescrevia dados.
+    try {
+      print('🌐 Enviando atualização para API...');
+      final updatedVisit = await _visitService.updateVisit(
+        visitId: visitId,
+        addressId: addressId,
+        visitorId: visitorId,
+        campaignId: campaignId,
+        scheduledDate: scheduledDate,
+        status: status,
+        attempt: attempt,
+        observation: observation,
+        visitOrder: visitOrder,
+        attendedBy: attendedBy,
+        situation: situation,
+        formData: formData,
+        answers: answers,
+      );
 
-    // ✅ Se estiver online, tentar enviar imediatamente
-    if (isOnline) {
-      try {
-        print('🌐 Enviando atualização para API...');
-        final updatedVisit = await _visitService.updateVisit(
-          visitId: visitId,
-          addressId: addressId,
-          visitorId: visitorId,
-          campaignId: campaignId,
-          scheduledDate: scheduledDate,
-          status: status,
-          attempt: attempt,
-          observation: observation,
-          visitOrder: visitOrder,
-          attendedBy: attendedBy,
-          situation: situation,
-          formData: formData,
-          answers: answers,
-        );
+      // ✅ Atualizar cache com dados da API
+      await _saveVisitToCache(updatedVisit);
 
-        // ✅ Atualizar cache com dados da API
-        await _saveVisitToCache(updatedVisit);
-
-        return updatedVisit;
-      } catch (e) {
-        print('⚠️ Erro ao sincronizar, dados salvos localmente: $e');
-        return VisitModel.fromJson(visitData);
-      }
-    } else {
-      print('📴 Offline: Visita salva localmente para sincronização futura');
+      return updatedVisit;
+    } catch (e) {
+      print('📴 Envio imediato falhou, enfileirando para sync: $e');
+      await _db.addToSyncQueue(
+        operation: 'UPDATE',
+        entity: 'visit',
+        entityId: visitId,
+        data: visitData,
+      );
       return VisitModel.fromJson(visitData);
     }
   }
@@ -306,7 +272,6 @@ class VisitRepository {
     Map<String, dynamic>? formData,
     Map<String, dynamic>? answers,
   }) async {
-    final isOnline = await _checkConnectivity();
     final now = DateTime.now().toIso8601String();
 
     final visitData = {
@@ -331,41 +296,35 @@ class VisitRepository {
     // ✅ Salvar localmente primeiro
     await _saveVisitToCacheFromMap(visitData);
 
-    // ✅ Adicionar à fila de sincronização
-    await _db.addToSyncQueue(
-      operation: 'UPDATE',
-      entity: 'visit',
-      entityId: visitId,
-      data: visitData,
-    );
+    // ✅ Tenta enviar imediatamente. Só enfileira se falhar (evita envio duplicado).
+    try {
+      print('🌐 Finalizando visita na API...');
+      final updatedVisit = await _visitService.updateVisit(
+        visitId: visitId,
+        addressId: addressId,
+        visitorId: visitorId,
+        campaignId: campaignId,
+        scheduledDate: scheduledDate,
+        status: status,
+        attempt: attempt,
+        observation: observation,
+        visitOrder: visitOrder,
+        attendedBy: attendedBy,
+        situation: situation,
+        formData: formData,
+        answers: answers,
+      );
 
-    if (isOnline) {
-      try {
-        print('🌐 Finalizando visita na API...');
-        final updatedVisit = await _visitService.updateVisit(
-          visitId: visitId,
-          addressId: addressId,
-          visitorId: visitorId,
-          campaignId: campaignId,
-          scheduledDate: scheduledDate,
-          status: status,
-          attempt: attempt,
-          observation: observation,
-          visitOrder: visitOrder,
-          attendedBy: attendedBy,
-          situation: situation,
-          formData: formData,
-          answers: answers,
-        );
-
-        await _saveVisitToCache(updatedVisit);
-        return updatedVisit;
-      } catch (e) {
-        print('⚠️ Erro ao finalizar visita na API: $e');
-        return VisitModel.fromJson(visitData);
-      }
-    } else {
-      print('📴 Offline: Visita finalizada localmente');
+      await _saveVisitToCache(updatedVisit);
+      return updatedVisit;
+    } catch (e) {
+      print('📴 Envio imediato falhou, enfileirando para sync: $e');
+      await _db.addToSyncQueue(
+        operation: 'UPDATE',
+        entity: 'visit',
+        entityId: visitId,
+        data: visitData,
+      );
       return VisitModel.fromJson(visitData);
     }
   }

@@ -20,6 +20,29 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _checkingSession = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ Auto-login: se já houver sessão salva (token), entra direto — funciona
+    // OFFLINE, pois só lê o secure storage, sem bater na rede.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryAutoLogin());
+  }
+
+  Future<void> _tryAutoLogin() async {
+    final controller = context.read<LoginController>();
+    final logged = await controller.isLoggedIn();
+
+    if (!logged) {
+      if (mounted) setState(() => _checkingSession = false);
+      return;
+    }
+
+    await controller.loadSavedUser();
+    if (!mounted) return;
+    _goToDashboard(controller);
+  }
 
   @override
   void dispose() {
@@ -32,6 +55,14 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     // ✅ PEGAR O CONTROLLER DO PROVIDER
     final controller = context.watch<LoginController>();
+
+    // Enquanto verifica se há sessão salva, mostra um loader.
+    if (_checkingSession) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return Scaffold(
       backgroundColor: AppColors.background,

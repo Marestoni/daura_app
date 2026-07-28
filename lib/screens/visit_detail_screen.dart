@@ -1,6 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../models/visit_model.dart';
 import '../services/visit_service.dart';
+import '../repositories/photo_repository.dart';
 import '../utils/app_colors.dart';
 import '../utils/constants.dart';
 
@@ -15,6 +18,8 @@ class VisitDetailScreen extends StatefulWidget {
 
 class _VisitDetailScreenState extends State<VisitDetailScreen> {
   final VisitService _visitService = VisitService();
+  final PhotoRepository _photoRepo = PhotoRepository();
+  final ImagePicker _picker = ImagePicker();
   VisitModel? _visit;
   bool _isLoading = true;
   bool _isSaving = false;
@@ -48,6 +53,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
   void dispose() {
     _observationController.dispose();
     _visitService.dispose();
+    _photoRepo.dispose();
     super.dispose();
   }
 
@@ -73,17 +79,10 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
         _endTime = visit.completedAt != null
             ? DateTime.parse(visit.completedAt!)
             : null;
-        _localPhotos = visit.photos
-            .map(
-              (p) => {
-                'id': p.id,
-                'path': p.path,
-                'filename': p.filename,
-                'isLocal': false,
-              },
-            )
-            .toList();
       });
+
+      // Carrega fotos (servidor + locais ainda não sincronizadas)
+      await _reloadPhotos();
     } catch (e) {
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '');
@@ -510,29 +509,92 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
   // ============================================
   // 26. AÇÃO: FOTOS
   // ============================================
-  void _takePhoto() {
-    // TODO: Implementar câmera
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Função de câmera em desenvolvimento')),
-    );
+  Future<void> _takePhoto() => _addPhotoFrom(ImageSource.camera);
+
+  Future<void> _pickPhoto() => _addPhotoFrom(ImageSource.gallery);
+
+  Future<void> _addPhotoFrom(ImageSource source) async {
+    try {
+      final XFile? file = await _picker.pickImage(
+        source: source,
+        imageQuality: 70,
+        maxWidth: 1600,
+      );
+      if (file == null) return; // usuário cancelou
+
+      await _photoRepo.addPhoto(visitId: widget.visitId, sourcePath: file.path);
+      await _reloadPhotos();
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Foto adicionada'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao adicionar foto: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
-  void _pickPhoto() {
-    // TODO: Implementar galeria
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Função de galeria em desenvolvimento')),
-    );
-  }
+  /// Recarrega a lista exibida: todas as fotos locais + fotos do servidor que
+  /// ainda não estejam representadas localmente (evita duplicar as já enviadas).
+  Future<void> _reloadPhotos() async {
+    final local = await _photoRepo.getLocalPhotos(widget.visitId);
+    final localServerIds =
+        local.map((p) => p['serverId']).where((id) => id != null).toSet();
 
-  void _deletePhoto(int index) {
+    final serverOnly = (_visit?.photos ?? [])
+        .where((p) => !localServerIds.contains(p.id))
+        .map(
+          (p) => {
+            'id': p.id,
+            'path': p.path,
+            'filename': p.filename,
+            'isLocal': false,
+          },
+        )
+        .toList();
+
+    if (!mounted) return;
     setState(() {
-      _localPhotos.removeAt(index);
+      _localPhotos = [...serverOnly, ...local];
     });
   }
 
-  void _viewPhoto(int index) {
-    final baseUrl = Constants.baseUrl.replaceAll('/api', '');
+  Future<void> _deletePhoto(int index) async {
+    final photo = _localPhotos[index];
+    try {
+      if (photo['isLocal'] == true) {
+        await _photoRepo.deletePhoto(photo['id'].toString());
+      }
+      // Fotos apenas-servidor: removidas da lista da tela (a exclusão remota
+      // fica a cargo do fluxo administrativo).
+      await _reloadPhotos();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao remover foto: $e')),
+      );
+    }
+  }
 
+  /// Provedor de imagem: arquivo local para fotos capturadas, rede para as do servidor.
+  ImageProvider _photoImageProvider(Map<String, dynamic> photo) {
+    if (photo['isLocal'] == true) {
+      return FileImage(File(photo['path'] as String));
+    }
+    final baseUrl = Constants.baseUrl.replaceAll('/api', '');
+    return NetworkImage('$baseUrl${photo['path']}');
+  }
+
+  void _viewPhoto(int index) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -546,8 +608,8 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
           child: Stack(
             children: [
               Center(
-                child: Image.network(
-                  '$baseUrl${_localPhotos[index]['path']}',
+                child: Image(
+                  image: _photoImageProvider(_localPhotos[index]),
                   fit: BoxFit.contain,
                   errorBuilder: (_, __, ___) => const Icon(
                     Icons.broken_image,
@@ -1338,9 +1400,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
                                 color: Colors.grey[200],
                                 borderRadius: BorderRadius.circular(8),
                                 image: DecorationImage(
-                                  image: NetworkImage(
-                                    'http://localhost:3000${photo['path']}',
-                                  ),
+                                  image: _photoImageProvider(photo),
                                   fit: BoxFit.cover,
                                   onError: (_, __) =>
                                       const Icon(Icons.broken_image),

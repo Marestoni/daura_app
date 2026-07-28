@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../database/database_helper.dart';
+import '../models/campaign_model.dart';
 import '../services/auth_service.dart';
 import '../services/campaign_service.dart';
+import '../services/photo_service.dart';
 import '../services/visit_service.dart';
 
 class SyncService {
@@ -16,49 +19,86 @@ class SyncService {
   final AuthService _authService = AuthService();
   final CampaignService _campaignService = CampaignService();
   final VisitService _visitService = VisitService();
+  final PhotoService _photoService = PhotoService();
 
   bool _isConnected = false;
   bool _isSyncing = false;
   Timer? _syncTimer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
   // ✅ GETTER PÚBLICO
   bool get isConnected => _isConnected;
 
   void startMonitoring() {
     print('🔄 Iniciando monitoramento de conectividade...');
+
+    // Estado inicial
     _checkConnectivity();
-    _syncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _checkConnectivity();
+
+    // ✅ Sincroniza de forma EVENTO-DIRIGIDA: reage a mudanças reais de rede
+    // (ex.: voltou a ter internet) em vez de fazer polling a cada 30s.
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      _handleConnectivityChange(_resultsToConnected(results));
+    });
+
+    // ✅ Rede de segurança: periodicamente ENVIA apenas as pendências
+    // (não baixa tudo do servidor) e somente se houver pendências.
+    _syncTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+      if (_isConnected && await getPendingCount() > 0) {
+        await _pushPending();
+      }
     });
   }
 
   void stopMonitoring() {
     _syncTimer?.cancel();
     _syncTimer = null;
+    _connectivitySub?.cancel();
+    _connectivitySub = null;
+  }
+
+  /// Converte o resultado do connectivity_plus 6.x (`List<ConnectivityResult>`)
+  /// em um booleano de "está conectado".
+  bool _resultsToConnected(List<ConnectivityResult> results) {
+    return results.any((r) => r != ConnectivityResult.none);
   }
 
   Future<void> _checkConnectivity() async {
     try {
-      final connectivityResult = await Connectivity().checkConnectivity();
-      final wasConnected = _isConnected;
-      _isConnected = connectivityResult != ConnectivityResult.none;
-
-      print(
-        '🌐 Status de conexão: ${_isConnected ? "Conectado" : "Desconectado"}',
-      );
-
-      if (_isConnected && !wasConnected) {
-        print('🔄 Internet reconectada! Iniciando sincronização...');
-        await syncAll();
-      } else if (_isConnected) {
-        print('🌐 Internet disponível, verificando pendências...');
-        await syncAll();
-      } else {
-        print('📴 Sem internet. Dados serão salvos localmente.');
-      }
+      final results = await Connectivity().checkConnectivity();
+      _handleConnectivityChange(_resultsToConnected(results));
     } catch (e) {
       print('❌ Erro ao verificar conectividade: $e');
       _isConnected = false;
+    }
+  }
+
+  /// Aplica a mudança de conectividade e dispara sync completa apenas na
+  /// TRANSIÇÃO offline -> online (evita martelar servidor/bateria).
+  void _handleConnectivityChange(bool nowConnected) {
+    final wasConnected = _isConnected;
+    _isConnected = nowConnected;
+
+    print('🌐 Status de conexão: ${nowConnected ? "Conectado" : "Desconectado"}');
+
+    if (nowConnected && !wasConnected) {
+      print('🔄 Internet reconectada! Iniciando sincronização...');
+      syncAll();
+    } else if (!nowConnected) {
+      print('📴 Sem internet. Dados serão salvos localmente.');
+    }
+  }
+
+  /// Envia apenas as pendências acumuladas (sem baixar dados do servidor).
+  Future<void> _pushPending() async {
+    if (_isSyncing || !_isConnected) return;
+    try {
+      _isSyncing = true;
+      await _syncPendingToServer();
+    } catch (e) {
+      print('❌ Erro ao enviar pendências: $e');
+    } finally {
+      _isSyncing = false;
     }
   }
 
@@ -178,7 +218,32 @@ class SyncService {
     Map<String, dynamic> data,
   ) async {
     try {
-      print('📸 Sincronizando foto $photoId...');
+      if (operation == 'DELETE') {
+        // Exclusão já tratada localmente/best-effort no repositório.
+        return true;
+      }
+
+      final visitId = data['visitId'] as String?;
+      final path = data['path'] as String?;
+      if (visitId == null || path == null) {
+        print('⚠️ Dados da foto $photoId incompletos: $data');
+        return false;
+      }
+
+      final file = File(path);
+      if (!await file.exists()) {
+        // Arquivo removido; não há o que enviar — evita retentar para sempre.
+        print('⚠️ Arquivo da foto $photoId não existe mais ($path).');
+        return true;
+      }
+
+      print('📸 Enviando foto $photoId da visita $visitId...');
+      final server = await _photoService.uploadPhoto(
+        visitId: visitId,
+        filePath: path,
+      );
+      await _db.markPhotoSynced(photoId, server['id']?.toString());
+      print('✅ Foto $photoId sincronizada.');
       return true;
     } catch (e) {
       print('❌ Erro ao sincronizar foto $photoId: $e');
@@ -193,34 +258,38 @@ class SyncService {
       final campaigns = await _campaignService.getCampaigns();
       print('📥 ${campaigns.data.length} campanhas recebidas da API');
 
-      for (var campaign in campaigns.data) {
-        try {
-          final campaignJson = campaign.toJson();
-
-          await _db.upsert('campaigns', {
-            'id': campaign.id,
-            'name': campaign.name,
-            'description': campaign.description,
-            'objective': campaign.objective,
-            'startDate': campaign.startDate,
-            'endDate': campaign.endDate,
-            'status': campaign.status,
-            'progress': campaign.progress,
-            'totalVisits': campaign.totalVisits,
-            'completedVisits': campaign.completedVisits,
-            'pendingVisits': campaign.pendingVisits,
-            'createdBy': jsonEncode(campaign.createdBy.toJson()),
-            'data': jsonEncode(campaignJson),
-            'updatedAt': DateTime.now().toIso8601String(),
-          });
-          print('✅ Campanha salva/atualizada: ${campaign.name}');
-        } catch (e) {
-          print('❌ Erro ao salvar campanha ${campaign.id}: $e');
-        }
-      }
+      await cacheCampaigns(campaigns.data);
       print('✅ ${campaigns.data.length} campanhas sincronizadas com sucesso!');
     } catch (e) {
       print('❌ Erro ao baixar dados do servidor: $e');
+    }
+  }
+
+  /// Grava/atualiza campanhas no cache local (SQLite).
+  /// Reutilizado pela sincronização E pelo dashboard, garantindo que as
+  /// campanhas fiquem disponíveis offline assim que são vistas online.
+  Future<void> cacheCampaigns(List<CampaignModel> campaigns) async {
+    for (final campaign in campaigns) {
+      try {
+        await _db.upsert('campaigns', {
+          'id': campaign.id,
+          'name': campaign.name,
+          'description': campaign.description,
+          'objective': campaign.objective,
+          'startDate': campaign.startDate,
+          'endDate': campaign.endDate,
+          'status': campaign.status,
+          'progress': campaign.progress,
+          'totalVisits': campaign.totalVisits,
+          'completedVisits': campaign.completedVisits,
+          'pendingVisits': campaign.pendingVisits,
+          'createdBy': jsonEncode(campaign.createdBy.toJson()),
+          'data': jsonEncode(campaign.toJson()),
+          'updatedAt': DateTime.now().toIso8601String(),
+        });
+      } catch (e) {
+        print('❌ Erro ao salvar campanha ${campaign.id} no cache: $e');
+      }
     }
   }
 
@@ -244,7 +313,7 @@ class SyncService {
         'attendedBy': visitData['attendedBy'],
         'situation': visitData['situation'],
         'visitOrder': visitData['visitOrder'],
-        'isFinished': visitData['isFinished'] ? 1 : 0,
+        'isFinished': (visitData['isFinished'] == true) ? 1 : 0,
         'data': jsonEncode(visitData),
         'updatedAt': DateTime.now().toIso8601String(),
       });

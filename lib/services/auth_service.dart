@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../models/login_response.dart';
 import '../models/user_model.dart';
 import '../utils/constants.dart';
+import '../database/database_helper.dart';
 import 'storage_service.dart';
 
 class AuthService {
@@ -62,6 +63,8 @@ class AuthService {
   // ✅ Método para logout
   Future<void> logout() async {
     await _storage.clearAll();
+    // Limpa o cache local para não vazar dados entre usuários no mesmo aparelho.
+    await DatabaseHelper().clearAllData();
   }
 
   // ✅ Verificar se está logado

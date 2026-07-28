@@ -40,6 +40,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Future<void> _loadCampaigns() async {
+    // Captura o SyncService antes de qualquer await (evita usar context após gap async).
+    final syncService = context.read<SyncService>();
+
     setState(() {
       _isLoading = true;
       _error = null;
@@ -47,25 +50,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     try {
-      // ✅ VERIFICAR CONECTIVIDADE
-      final syncService = context.read<SyncService>();
+      // ✅ OFFLINE-FIRST: sempre TENTA a API primeiro. O flag isConnected do
+      // connectivity_plus é apenas uma dica e é pouco confiável (ex.: no
+      // emulador Android costuma reportar "sem rede" mesmo com internet).
+      // Se a rede realmente falhar, o catch abaixo cai para o cache local.
+      print('🌐 Carregando campanhas da API...');
+      final response = await _campaignService.getCampaigns();
 
-      if (syncService.isConnected) {
-        // ✅ ONLINE: Buscar da API
-        print('🌐 Carregando campanhas da API...');
-        final response = await _campaignService.getCampaigns();
-        setState(() {
-          _campaigns = response.data;
-          _isLoading = false;
-        });
-      } else {
-        // ✅ OFFLINE: Buscar do cache local
-        print('📴 Carregando campanhas do cache local...');
-        await _loadFromLocalCache();
-      }
+      // ✅ Grava no cache local para uso offline posterior.
+      await syncService.cacheCampaigns(response.data);
+
+      if (!mounted) return;
+      setState(() {
+        _campaigns = response.data;
+        _isLoading = false;
+        _isOfflineMode = false;
+      });
     } catch (e) {
-      // Se falhar, tentar carregar do cache local
-      print('⚠️ Erro na API, tentando cache local...');
+      // Se falhar (rede indisponível), tentar carregar do cache local
+      print('⚠️ Erro na API, tentando cache local... $e');
       await _loadFromLocalCache();
     }
   }
