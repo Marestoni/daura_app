@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/visit_model.dart';
 import '../utils/app_colors.dart';
+import '../utils/maps_launcher.dart';
 import '../screens/visit_detail_screen.dart';
 
 class VisitCard extends StatelessWidget {
@@ -79,6 +80,25 @@ class VisitCard extends StatelessWidget {
                 ),
               ],
             ),
+            // ✅ DISTÂNCIA DO PONTO ANTERIOR (roteiro otimizado)
+            if (visit.distanceFromPrevious != null &&
+                visit.distanceFromPrevious! > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  const Icon(Icons.route, size: 14, color: AppColors.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${_formatDistance(visit.distanceFromPrevious!)} do ponto anterior',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             // ✅ OBSERVAÇÕES - usar observation se disponível
             if ((visit.observation != null && visit.observation!.isNotEmpty) ||
                 (visit.notes != null && visit.notes!.isNotEmpty)) ...[
@@ -157,11 +177,24 @@ class VisitCard extends StatelessWidget {
                 ],
               ),
             ],
-            // ✅ INDICADOR DE CLIQUE
+            // ✅ AÇÃO: VER NO MAPA + indicador de clique
             const SizedBox(height: 4),
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                OutlinedButton.icon(
+                  onPressed: () => _openMap(context),
+                  icon: const Icon(Icons.map_outlined, size: 16),
+                  label: const Text('Ver no mapa'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
+                const Spacer(),
                 Icon(Icons.chevron_right, size: 16, color: Colors.grey[400]),
               ],
             ),
@@ -169,6 +202,20 @@ class VisitCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _formatDistance(double km) {
+    if (km < 1) return '${(km * 1000).round()} m';
+    return '${km.toStringAsFixed(1)} km';
+  }
+
+  Future<void> _openMap(BuildContext context) async {
+    final ok = await openDirections(visit.address);
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir o mapa.')),
+      );
+    }
   }
 
   Widget _buildStatusChip(String status) {

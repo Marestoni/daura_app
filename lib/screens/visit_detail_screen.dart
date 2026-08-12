@@ -6,6 +6,7 @@ import '../services/visit_service.dart';
 import '../repositories/photo_repository.dart';
 import '../utils/app_colors.dart';
 import '../utils/constants.dart';
+import '../utils/maps_launcher.dart';
 
 class VisitDetailScreen extends StatefulWidget {
   final String visitId;
@@ -776,10 +777,43 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
             ),
             _buildInfoRow('Telefone', _visit!.address.phone ?? 'Não informado'),
             _buildInfoRow('Status', _visit!.statusLabel ?? _visit!.status),
+            if (_visit!.visitOrder != null)
+              _buildInfoRow('Ordem no roteiro', '${_visit!.visitOrder}ª parada'),
+            if (_visit!.distanceFromPrevious != null &&
+                _visit!.distanceFromPrevious! > 0)
+              _buildInfoRow('Do ponto anterior',
+                  _formatDistance(_visit!.distanceFromPrevious!)),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openMap,
+                icon: const Icon(Icons.map_outlined, size: 18),
+                label: const Text('Ver no mapa'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  String _formatDistance(double km) {
+    if (km < 1) return '${(km * 1000).round()} m';
+    return '${km.toStringAsFixed(1)} km';
+  }
+
+  Future<void> _openMap() async {
+    final ok = await openDirections(_visit!.address);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível abrir o mapa.')),
+      );
+    }
   }
 
   Widget _buildVisitStatusSection() {
