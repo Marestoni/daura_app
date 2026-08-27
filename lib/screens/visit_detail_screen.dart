@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/visit_model.dart';
 import '../repositories/visit_repository.dart';
 import '../repositories/photo_repository.dart';
+import '../services/storage_service.dart';
 import '../utils/app_colors.dart';
 import '../utils/constants.dart';
 import '../utils/maps_launcher.dart';
@@ -20,7 +21,9 @@ class VisitDetailScreen extends StatefulWidget {
 class _VisitDetailScreenState extends State<VisitDetailScreen> {
   final VisitRepository _visitRepository = VisitRepository();
   final PhotoRepository _photoRepo = PhotoRepository();
+  final StorageService _storage = StorageService();
   final ImagePicker _picker = ImagePicker();
+  String? _token; // usado para autenticar o carregamento de fotos do servidor
   VisitModel? _visit;
   bool _isLoading = true;
   bool _isSaving = false;
@@ -65,6 +68,9 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     });
 
     try {
+      // Token para autenticar o GET das fotos do servidor (endpoint /raw).
+      _token ??= await _storage.getToken();
+
       // ✅ OFFLINE-FIRST: via repositório (tenta API e, sem rede, cai no cache local).
       final visit = await _visitRepository.getVisitById(
         context: context,
@@ -610,7 +616,10 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
       return FileImage(File(photo['path'] as String));
     }
     final baseUrl = Constants.baseUrl.replaceAll('/api', '');
-    return NetworkImage('$baseUrl${photo['path']}');
+    return NetworkImage(
+      '$baseUrl${photo['path']}',
+      headers: _token != null ? {'Authorization': 'Bearer $_token'} : null,
+    );
   }
 
   void _viewPhoto(int index) {
