@@ -1,14 +1,14 @@
 class Constants {
   static const String appName = 'Gestão Daura';
 
-  // PARA ANDROID (EMULADOR) - USE ESTE:
-  static const String baseUrl = 'http://10.0.2.2:3000/api';
+  // ✅ CELULAR FÍSICO NA REDE (Wi-Fi) — IP do PC onde a API roda:
+  static const String baseUrl = 'http://192.168.2.11:3000/api';
 
-  // PARA WEB (CHROME) - DESCOMENTE ESTE:
-  //static const String baseUrl = 'http://localhost:3000/api';
+  // Emulador Android:
+  // static const String baseUrl = 'http://10.0.2.2:3000/api';
 
-  // PARA DISPOSITIVO FÍSICO (USB) - USE O IP DA SUA MÁQUINA:
-  // static const String baseUrl = 'http://192.168.1.100:3000/api';
+  // Web (Chrome):
+  // static const String baseUrl = 'http://localhost:3000/api';
 
   static const String loginEndpoint = '/auth/login';
   static const int minPasswordLength = 6;
