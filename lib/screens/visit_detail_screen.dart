@@ -2,7 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/visit_model.dart';
-import '../services/visit_service.dart';
+import '../repositories/visit_repository.dart';
 import '../repositories/photo_repository.dart';
 import '../utils/app_colors.dart';
 import '../utils/constants.dart';
@@ -18,7 +18,7 @@ class VisitDetailScreen extends StatefulWidget {
 }
 
 class _VisitDetailScreenState extends State<VisitDetailScreen> {
-  final VisitService _visitService = VisitService();
+  final VisitRepository _visitRepository = VisitRepository();
   final PhotoRepository _photoRepo = PhotoRepository();
   final ImagePicker _picker = ImagePicker();
   VisitModel? _visit;
@@ -53,7 +53,7 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
   @override
   void dispose() {
     _observationController.dispose();
-    _visitService.dispose();
+    _visitRepository.dispose();
     _photoRepo.dispose();
     super.dispose();
   }
@@ -65,7 +65,19 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
     });
 
     try {
-      final visit = await _visitService.getVisitById(widget.visitId);
+      // ✅ OFFLINE-FIRST: via repositório (tenta API e, sem rede, cai no cache local).
+      final visit = await _visitRepository.getVisitById(
+        context: context,
+        visitId: widget.visitId,
+      );
+
+      if (visit == null) {
+        setState(() {
+          _error = 'Visita não encontrada';
+          _isLoading = false;
+        });
+        return;
+      }
 
       setState(() {
         _visit = visit;
@@ -165,7 +177,8 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
       if (isNewAttempt && nextAttempt != null) {
         print('🔵 Nova tentativa: $nextAttempt');
 
-        updatedVisit = await _visitService.updateVisit(
+        updatedVisit = await _visitRepository.updateVisit(
+          context: context,
           visitId: widget.visitId,
           addressId: _visit!.addressId,
           visitorId: _visit!.visitorId,
@@ -191,8 +204,11 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
           ),
         );
       } else {
-        // ✅ Primeira tentativa: POST normal /start
-        updatedVisit = await _visitService.startVisit(widget.visitId);
+        // ✅ Primeira tentativa: POST normal /start (offline-first via repositório)
+        updatedVisit = await _visitRepository.startVisit(
+          context: context,
+          visitId: widget.visitId,
+        );
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -314,8 +330,9 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
         scheduledDate = null; // ✅ Envia null para a API
       }
 
-      // ✅ CORRIGIDO: Usar os valores do _visit
-      final updatedVisit = await _visitService.updateVisit(
+      // ✅ CORRIGIDO: Usar os valores do _visit (offline-first via repositório)
+      final updatedVisit = await _visitRepository.updateVisit(
+        context: context,
         visitId: widget.visitId,
         addressId: _visit!.addressId, // ✅ Pega do _visit
         visitorId: _visit!.visitorId, // ✅ Pega do _visit
@@ -457,8 +474,9 @@ class _VisitDetailScreenState extends State<VisitDetailScreen> {
         scheduledDate = null; // ✅ Envia null para a API
       }
 
-      // ✅ 27.2 Atualizar status da visita via PUT
-      final updatedVisit = await _visitService.updateVisit(
+      // ✅ 27.2 Finalizar visita (offline-first via repositório: envia agora ou enfileira)
+      final updatedVisit = await _visitRepository.finishVisit(
+        context: context,
         visitId: widget.visitId,
         addressId: _visit!.addressId,
         visitorId: _visit!.visitorId,

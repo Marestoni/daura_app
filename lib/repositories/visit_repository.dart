@@ -158,8 +158,9 @@ class VisitRepository {
       'updatedAt': DateTime.now().toIso8601String(),
     };
 
-    // ✅ Salvar localmente primeiro (offline-first)
-    await _saveVisitToCacheFromMap(visitData);
+    // ✅ Salvar localmente primeiro (offline-first), preservando o objeto
+    // completo no cache. localVisit já vem COMPLETO (com endereço/IDs).
+    final localVisit = await _applyChangesToCachedVisit(visitId, visitData);
 
     // ✅ Tenta enviar imediatamente. Só enfileira se o envio falhar — assim
     // evita o envio duplicado (fila + envio imediato) que sobrescrevia dados.
@@ -193,7 +194,7 @@ class VisitRepository {
         entityId: visitId,
         data: visitData,
       );
-      return VisitModel.fromJson(visitData);
+      return localVisit;
     }
   }
 
@@ -218,7 +219,7 @@ class VisitRepository {
       }
     }
 
-    // ✅ Offline: criar dados localmente
+    // ✅ Offline: aplicar a mudança preservando o objeto completo do cache.
     print('📴 Iniciando visita offline...');
     final now = DateTime.now().toIso8601String();
 
@@ -238,9 +239,10 @@ class VisitRepository {
       'startedAt': now,
       'observation': currentVisit.observation,
       'visitOrder': currentVisit.visitOrder,
+      'updatedAt': now,
     };
 
-    await _saveVisitToCacheFromMap(updatedData);
+    final localVisit = await _applyChangesToCachedVisit(visitId, updatedData);
 
     await _db.addToSyncQueue(
       operation: 'UPDATE',
@@ -249,7 +251,7 @@ class VisitRepository {
       data: updatedData,
     );
 
-    return VisitModel.fromJson(updatedData);
+    return localVisit;
   }
 
   // ============================================
@@ -293,8 +295,8 @@ class VisitRepository {
       'updatedAt': now,
     };
 
-    // ✅ Salvar localmente primeiro
-    await _saveVisitToCacheFromMap(visitData);
+    // ✅ Salvar localmente primeiro, preservando o objeto completo no cache.
+    final localVisit = await _applyChangesToCachedVisit(visitId, visitData);
 
     // ✅ Tenta enviar imediatamente. Só enfileira se falhar (evita envio duplicado).
     try {
@@ -325,7 +327,7 @@ class VisitRepository {
         entityId: visitId,
         data: visitData,
       );
-      return VisitModel.fromJson(visitData);
+      return localVisit;
     }
   }
 
@@ -367,32 +369,6 @@ class VisitRepository {
       });
     } catch (e) {
       print('❌ Erro ao salvar visita ${visit.id} no cache: $e');
-    }
-  }
-
-  Future<void> _saveVisitToCacheFromMap(Map<String, dynamic> visitData) async {
-    try {
-      await _db.upsert('visits', {
-        'id': visitData['id'],
-        'campaignId': visitData['campaignId'] ?? '',
-        'visitorId': visitData['visitorId'] ?? '',
-        'addressId': visitData['addressId'] ?? '',
-        'status': visitData['status'] ?? 'pendente',
-        'scheduledDate': visitData['scheduledDate'],
-        'completedDate': visitData['completedDate'],
-        'attempt': visitData['attempt'],
-        'startedAt': visitData['startedAt'],
-        'completedAt': visitData['completedAt'],
-        'observation': visitData['observation'],
-        'attendedBy': visitData['attendedBy'],
-        'situation': visitData['situation'],
-        'visitOrder': visitData['visitOrder'],
-        'isFinished': visitData['isFinished'] ?? 0,
-        'data': jsonEncode(visitData),
-        'updatedAt': DateTime.now().toIso8601String(),
-      });
-    } catch (e) {
-      print('❌ Erro ao salvar visita do mapa no cache: $e');
     }
   }
 
@@ -478,6 +454,29 @@ class VisitRepository {
       print('❌ Erro ao buscar visita $visitId do cache: $e');
       return null;
     }
+  }
+
+  /// Aplica um conjunto de mudanças (campos planos) SOBRE a visita completa que
+  /// já está no cache, preservando os objetos aninhados (address/campaign/visitor).
+  /// Salva o resultado no cache e devolve um [VisitModel] COMPLETO — evitando o
+  /// "modelo magro" que zerava o endereço/IDs após uma ação offline.
+  Future<VisitModel> _applyChangesToCachedVisit(
+    String visitId,
+    Map<String, dynamic> changes,
+  ) async {
+    final current = await _getVisitFromCache(visitId);
+    final Map<String, dynamic> merged = current != null
+        ? current.toJson()
+        : <String, dynamic>{};
+
+    merged['id'] = visitId;
+    changes.forEach((key, value) {
+      if (value != null) merged[key] = value;
+    });
+
+    final visit = VisitModel.fromJson(merged);
+    await _saveVisitToCache(visit);
+    return visit;
   }
 
   // ============================================

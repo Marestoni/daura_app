@@ -404,10 +404,17 @@ class VisitModel {
     return VisitModel(
       id: json['id']?.toString() ?? '',
 
-      // ✅ CORRIGIDO
-      visitorId: visitor.id,
-      campaignId: campaign.id,
-      addressId: address.id,
+      // ✅ Deriva dos objetos aninhados; se ausentes (ex.: modelo montado a
+      // partir de mudanças offline), cai para os IDs no nível raiz do JSON.
+      visitorId: visitor.id.isNotEmpty
+          ? visitor.id
+          : (json['visitorId']?.toString() ?? ''),
+      campaignId: campaign.id.isNotEmpty
+          ? campaign.id
+          : (json['campaignId']?.toString() ?? ''),
+      addressId: address.id.isNotEmpty
+          ? address.id
+          : (json['addressId']?.toString() ?? ''),
 
       status: json['status']?.toString() ?? '',
       notes: json['notes']?.toString(),
