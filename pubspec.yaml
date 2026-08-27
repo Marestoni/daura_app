@@ -55,6 +55,7 @@ dependencies:
 
   # Abrir mapa nativo com rota até o endereço
   url_launcher: ^6.3.1
+  sqflite_common_ffi: ^2.4.2
   
 
 dev_dependencies:

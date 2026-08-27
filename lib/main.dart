@@ -1,5 +1,8 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
 import 'controllers/login_controller.dart';
@@ -8,6 +11,16 @@ import 'services/connectivity_service.dart';
 import 'utils/app_colors.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // ✅ Desktop (Windows/Linux/macOS): o sqflite padrão só roda em mobile;
+  // no desktop o cache local usa o SQLite via FFI. Guardado para não afetar
+  // o build Android/iOS.
+  if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  }
+
   // ✅ Inicializar o SyncService ANTES de tudo
   final syncService = SyncService();
   syncService.startMonitoring();
