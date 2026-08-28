@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/login_response.dart';
@@ -18,14 +19,18 @@ class AuthService {
 
       final url = Uri.parse('${Constants.baseUrl}${Constants.loginEndpoint}');
 
-      final response = await _client.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: jsonEncode({'email': email, 'password': password}),
-      );
+      final response = await _client
+          .post(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({'email': email, 'password': password}),
+          )
+          // Cold start do Render pode levar dezenas de segundos; 60s tolera isso
+          // mas evita o spinner infinito se a conexão travar de vez.
+          .timeout(const Duration(seconds: 60));
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
@@ -51,6 +56,11 @@ class AuthService {
         final message = data['message'] ?? 'Erro ao fazer login';
         throw Exception(message);
       }
+    } on TimeoutException {
+      print('❌ Timeout no login');
+      throw Exception(
+        'Tempo esgotado ao conectar. Verifique sua internet e tente novamente.',
+      );
     } on http.ClientException catch (e) {
       print('❌ Erro de conexão: $e');
       throw Exception('Erro de conexão com o servidor');

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart'; // ✅ ADICIONE
 import '../controllers/login_controller.dart';
@@ -31,17 +32,25 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _tryAutoLogin() async {
-    final controller = context.read<LoginController>();
-    final logged = await controller.isLoggedIn();
+    try {
+      final controller = context.read<LoginController>();
+      // Timeout defensivo: se a leitura da sessão (secure storage) travar,
+      // trata como não logado em vez de deixar o app preso no spinner.
+      final logged = await controller
+          .isLoggedIn()
+          .timeout(const Duration(seconds: 5), onTimeout: () => false);
 
-    if (!logged) {
-      if (mounted) setState(() => _checkingSession = false);
-      return;
+      if (logged) {
+        await controller.loadSavedUser();
+        if (!mounted) return;
+        _goToDashboard(controller);
+        return;
+      }
+    } catch (e) {
+      debugPrint('⚠️ Auto-login falhou, indo para o login: $e');
     }
-
-    await controller.loadSavedUser();
-    if (!mounted) return;
-    _goToDashboard(controller);
+    // Qualquer caminho que não navegou para o dashboard mostra o formulário.
+    if (mounted) setState(() => _checkingSession = false);
   }
 
   @override
