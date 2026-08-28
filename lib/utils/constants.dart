@@ -1,8 +1,11 @@
 class Constants {
   static const String appName = 'Gestão Daura';
 
-  // ✅ CELULAR FÍSICO NA REDE (Wi-Fi) — IP do PC onde a API roda:
-  static const String baseUrl = 'http://192.168.2.11:3000/api';
+  // ✅ PRODUÇÃO (Render) — usado no APK do beta:
+  static const String baseUrl = 'https://daura-api.onrender.com/api';
+
+  // Celular físico na LAN (Wi-Fi) — IP do PC onde a API roda:
+  // static const String baseUrl = 'http://192.168.2.11:3000/api';
 
   // Emulador Android:
   // static const String baseUrl = 'http://10.0.2.2:3000/api';
